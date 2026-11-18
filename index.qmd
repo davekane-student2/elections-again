@@ -1,0 +1,83 @@
+---
+title: "2026 US Senate Elections"
+---
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+
+library(tidyverse)
+library(sf)
+library(tigris)
+library(leaflet)
+
+options(tigris_use_cache = TRUE)
+
+# Download and simplify NC precinct (voting district) boundaries
+nc_vtd <- voting_districts(state = "NC", year = 2020) |>
+  st_transform(4326) |>
+  st_simplify(dTolerance = 0.001)
+
+# Add county names using FIPS codes
+data(fips_codes, package = "tigris")
+nc_fips <- fips_codes |>
+  filter(state == "NC") |>
+  mutate(County = toupper(str_remove(county, " County")))
+
+vtd_clean <- nc_vtd |>
+  left_join(nc_fips, by = c("COUNTYFP20" = "county_code")) |>
+  mutate(
+    key_vtd = toupper(str_remove(str_replace_all(VTDST20, "[^A-Za-z0-9]", ""), "^0+")),
+    key_name = toupper(str_remove(str_replace_all(NAME20, "[^A-Za-z0-9]", ""), "^0+"))
+  )
+
+# Calculate the winning candidate in each precinct
+senate_results <- read_tsv("data/north-carolina/results_pct_20261103.txt", show_col_types = FALSE) |>
+  filter(`Contest Name` == "US SENATE", `Real Precinct` == "Y") |>
+  group_by(County, Precinct, Choice, `Choice Party`) |>
+  summarize(votes = sum(`Total Votes`), .groups = "drop") |>
+  group_by(County, Precinct) |>
+  slice_max(votes, n = 1, with_ties = FALSE) |>
+  ungroup() |>
+  mutate(key = toupper(str_remove(str_replace_all(Precinct, "[^A-Za-z0-9]", ""), "^0+")))
+
+# Join results to spatial polygons by precinct ID, filling unmatched with precinct name
+joined_vtd <- vtd_clean |>
+  left_join(senate_results, by = c("County", "key_vtd" = "key"))
+
+unmatched_idx <- which(is.na(joined_vtd$Choice))
+fill_data <- vtd_clean[unmatched_idx, ] |>
+  st_drop_geometry() |>
+  select(COUNTYFP20, VTDST20, County, key_name) |>
+  left_join(senate_results, by = c("County", "key_name" = "key"))
+
+joined_vtd$Choice[unmatched_idx] <- fill_data$Choice
+joined_vtd$votes[unmatched_idx] <- fill_data$votes
+joined_vtd$Precinct[unmatched_idx] <- fill_data$Precinct
+
+# Color palette matching the candidates
+pal <- colorFactor(
+  palette = c("Roy Cooper" = "#2b83ba", "Michael Whatley" = "#d7191c", "Michael Dublin" = "#fdae61"),
+  domain = joined_vtd$Choice,
+  na.color = "#d9d9d9"
+)
+
+# Interactive leaflet map
+leaflet(joined_vtd) |>
+  addProviderTiles(providers$CartoDB.Positron) |>
+  addPolygons(
+    fillColor = ~pal(Choice),
+    weight = 0.5,
+    color = "white",
+    fillOpacity = 0.7,
+    highlightOptions = highlightOptions(weight = 2, color = "#444", fillOpacity = 0.9, bringToFront = TRUE),
+    label = ~paste0(County, " - Precinct ", coalesce(Precinct, NAME20), ": ", coalesce(Choice, "No data"), " (", coalesce(as.character(votes), "N/A"), " votes)")
+  ) |>
+  addLegend(
+    pal = pal,
+    values = ~Choice,
+    title = "Winning Candidate",
+    position = "bottomright"
+  )
+```

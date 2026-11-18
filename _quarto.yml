@@ -1,0 +1,24 @@
+project:
+  type: website
+
+website:
+  title: "Elections 2026"
+  navbar:
+    left:
+      - href: index.qmd
+        text: Home
+      - text: State
+        menu:
+          - href: alabama.qmd
+            text: "Alabama"
+          - href: north-carolina.qmd
+            text: "North Carolina"
+      - about.qmd
+
+format:
+  html:
+    theme:
+      - cosmo
+      - brand
+    css: styles.css
+    toc: true

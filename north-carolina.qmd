@@ -1,0 +1,36 @@
+---
+title: "North Carolina"
+---
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+
+library(tidyverse)
+
+senate_results <- read_tsv("data/north-carolina/results_pct_20261103.txt", show_col_types = FALSE) |>
+  filter(`Contest Name` == "US SENATE") |>
+  group_by(County, Choice, `Choice Party`) |>
+  summarize(votes = sum(`Total Votes`), .groups = "drop") |>
+  group_by(County) |>
+  slice_max(votes, n = 1) |>
+  mutate(subregion = tolower(County))
+
+nc_counties <- map_data("county") |>
+  filter(region == "north carolina") |>
+  left_join(senate_results, by = "subregion")
+
+ggplot(nc_counties, aes(x = long, y = lat, group = group, fill = Choice)) +
+  geom_polygon(color = "white", linewidth = 0.2) +
+  coord_quickmap() +
+  scale_fill_manual(
+    values = c("Roy Cooper" = "#2b83ba", "Michael Whatley" = "#d7191c")
+  ) +
+  theme_void() +
+  labs(
+    title = "North Carolina US Senate Race (2026)",
+    subtitle = "Winning candidate by county",
+    fill = "Candidate"
+  )
+```
